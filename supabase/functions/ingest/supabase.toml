@@ -1,0 +1,3 @@
+# supabase/functions/ingest/supabase.toml
+[functions.ingest]
+verify_jwt = false

@@ -1,0 +1,3 @@
+# supabase/functions/sheet-daily-jst08/supabase.toml
+name = "sheet-daily-jst08"
+verify_jwt = false
