@@ -22,19 +22,25 @@ type Row = {
 
 const asNum = (v: any) => (typeof v === 'number' ? v : v == null ? 0 : Number(v))
 const fmtMoney = (v: any) => asNum(v).toLocaleString('ja-JP', { maximumFractionDigits: 0 })
-const fmtJST = (utc: string) => new Date(utc).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
+const fmtJST = (utc: string) =>
+  new Date(utc).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
 
 export default function DashboardPage() {
-  // ✅ supabase クライアントを固定化（レンダーごとに再生成しない）
+  // Supabase クライアントは固定（再レンダーで再生成しない）
   const supabase = useMemo(() => createClient(), [])
+
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(true)
   const [needLogin, setNeedLogin] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastRefreshed, setLastRefreshed] = useState<string>('')
+  const [userEmail, setUserEmail] = useState<string>('')
 
-  // ✅ 二重実行防止ロック
+  // 二重実行防止 & 初回一度きり & アンマウント検知
   const busyRef = useRef(false)
+  const didInit = useRef(false)
+  const alive = useRef(true)
+  useEffect(() => () => { alive.current = false }, [])
 
   const load = useCallback(async () => {
     if (busyRef.current) return
@@ -48,10 +54,14 @@ export default function DashboardPage() {
       const user = userData?.user
 
       if (!user) {
+        if (!alive.current) return
         setNeedLogin(true)
+        setUserEmail('')
         setRows([])
         return
       }
+
+      setUserEmail(user.email ?? '')
 
       const { data, error } = await supabase
         .from('accounts_with_deltas')
@@ -61,21 +71,39 @@ export default function DashboardPage() {
 
       if (error) throw error
 
+      if (!alive.current) return
       setRows((data || []) as Row[])
-      setLastRefreshed(new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }))
+      setLastRefreshed(
+        new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
+      )
     } catch (e: any) {
       console.error('load error:', e)
+      if (!alive.current) return
       setError(e?.message || String(e))
     } finally {
-      setLoading(false)
+      if (alive.current) setLoading(false)
       busyRef.current = false
     }
   }, [supabase])
 
-  // ✅ 初回だけロード（supabase が固定なので load も固定化され 1 回だけ実行）
+  // 初回だけロード（StrictModeの二重実行を抑制）
   useEffect(() => {
-    load()
+    if (!didInit.current) {
+      didInit.current = true
+      setTimeout(() => { load() }, 0)
+    }
   }, [load])
+
+  const onSignOut = useCallback(async () => {
+    try {
+      await supabase.auth.signOut()
+    } finally {
+      // 画面即リセット
+      setUserEmail('')
+      setRows([])
+      setNeedLogin(true)
+    }
+  }, [supabase])
 
   if (needLogin) {
     return (
@@ -89,7 +117,7 @@ export default function DashboardPage() {
     )
   }
 
-  // 合計
+  // 合計計算
   const totals = rows.reduce(
     (acc, r) => {
       acc.accounts += 1
@@ -105,18 +133,32 @@ export default function DashboardPage() {
 
   return (
     <div className="p-6">
-      {/* ヘッダ + 更新ボタン */}
+      {/* ヘッダ（更新 & ログアウト） */}
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-semibold">口座ダッシュボード</h1>
         <div className="flex items-center gap-3">
-          <span className="text-sm text-gray-500">最終更新（JST）：{lastRefreshed || '-'}</span>
+          {userEmail && (
+            <span className="text-sm text-gray-600 truncate max-w-[40ch]">
+              {userEmail}
+            </span>
+          )}
+          <span className="text-sm text-gray-500">
+            最終更新（JST）：{lastRefreshed || '-'}
+          </span>
           <button
             onClick={load}
-            disabled={loading}
+            disabled={loading || busyRef.current}
             className={`px-4 py-2 rounded text-white ${loading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}
             aria-busy={loading}
           >
             {loading ? '更新中…' : '更新'}
+          </button>
+          <button
+            onClick={onSignOut}
+            className="px-3 py-2 rounded border text-sm hover:bg-gray-50"
+            title="サインアウトします"
+          >
+            ログアウト
           </button>
         </div>
       </div>
@@ -124,9 +166,7 @@ export default function DashboardPage() {
       {error && (
         <div className="mb-3 text-sm text-red-600">
           エラー: {error}{' '}
-          <button className="underline ml-2" onClick={load}>
-            再試行
-          </button>
+          <button className="underline ml-2" onClick={load}>再試行</button>
         </div>
       )}
 
