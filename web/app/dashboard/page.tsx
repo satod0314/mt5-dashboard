@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabaseClient'
 
 type Row = {
@@ -25,19 +25,33 @@ const fmtMoney = (v: any) => asNum(v).toLocaleString('ja-JP', { maximumFractionD
 const fmtJST = (utc: string) => new Date(utc).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
 
 export default function DashboardPage() {
-  const supabase = createClient()
+  // ✅ supabase クライアントを固定化（レンダーごとに再生成しない）
+  const supabase = useMemo(() => createClient(), [])
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(true)
   const [needLogin, setNeedLogin] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastRefreshed, setLastRefreshed] = useState<string>('')
 
+  // ✅ 二重実行防止ロック
+  const busyRef = useRef(false)
+
   const load = useCallback(async () => {
-    setLoading(true); setError(null)
+    if (busyRef.current) return
+    busyRef.current = true
+    setLoading(true)
+    setError(null)
+
     try {
-      const { data: userData } = await supabase.auth.getUser()
+      const { data: userData, error: uerr } = await supabase.auth.getUser()
+      if (uerr) throw uerr
       const user = userData?.user
-      if (!user) { setNeedLogin(true); setRows([]); return }
+
+      if (!user) {
+        setNeedLogin(true)
+        setRows([])
+        return
+      }
 
       const { data, error } = await supabase
         .from('accounts_with_deltas')
@@ -46,27 +60,36 @@ export default function DashboardPage() {
         .order('balance', { ascending: false })
 
       if (error) throw error
+
       setRows((data || []) as Row[])
       setLastRefreshed(new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }))
     } catch (e: any) {
+      console.error('load error:', e)
       setError(e?.message || String(e))
     } finally {
       setLoading(false)
+      busyRef.current = false
     }
   }, [supabase])
 
-  useEffect(() => { load() }, [load])
+  // ✅ 初回だけロード（supabase が固定なので load も固定化され 1 回だけ実行）
+  useEffect(() => {
+    load()
+  }, [load])
 
   if (needLogin) {
     return (
       <div className="p-6">
         <h1 className="text-xl font-semibold mb-2">ログインが必要です</h1>
         <p className="mb-4">このページはログインユーザーのデータのみ表示します。</p>
-        <a className="inline-block px-4 py-2 rounded bg-black text-white" href="/login">ログインへ</a>
+        <a className="inline-block px-4 py-2 rounded bg-black text-white" href="/login">
+          ログインへ
+        </a>
       </div>
     )
   }
 
+  // 合計
   const totals = rows.reduce(
     (acc, r) => {
       acc.accounts += 1
@@ -91,6 +114,7 @@ export default function DashboardPage() {
             onClick={load}
             disabled={loading}
             className={`px-4 py-2 rounded text-white ${loading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}
+            aria-busy={loading}
           >
             {loading ? '更新中…' : '更新'}
           </button>
@@ -98,7 +122,12 @@ export default function DashboardPage() {
       </div>
 
       {error && (
-        <div className="mb-3 text-sm text-red-600">エラー: {error} <button className="underline ml-2" onClick={load}>再試行</button></div>
+        <div className="mb-3 text-sm text-red-600">
+          エラー: {error}{' '}
+          <button className="underline ml-2" onClick={load}>
+            再試行
+          </button>
+        </div>
       )}
 
       {/* 合計カード */}
