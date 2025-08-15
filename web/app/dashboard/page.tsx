@@ -1,7 +1,6 @@
-// UPDATED: JST08:00 前日差 / JST表示 / 金額小数なし  (timestamp: $(date))
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabaseClient'
 
 type Row = {
@@ -10,75 +9,100 @@ type Row = {
   broker: string
   tag: string
   currency: string
-  balance: number
-  equity: number
-  profit_float: number
-  margin: number
+  balance: number | string | null
+  equity: number | string | null
+  profit_float: number | string | null
+  margin: number | string | null
   ts_utc: string
-  yday_balance: number | null
-  delta_yday: number | null
-  same_hour_yday_balance: number | null
-  delta_same_hour_yday: number | null
+  yday_balance: number | string | null
+  delta_yday: number | string | null
+  same_hour_yday_balance: number | string | null
+  delta_same_hour_yday: number | string | null
 }
 
-type Totals = {
-  accounts: number
-  balance: number
-  equity: number
-  profit: number
-  delta_yday: number
-  delta_same_hour_yday: number
-}
-
-const fmtMoney = (v: number | null | undefined) =>
-  v == null ? '-' : v.toLocaleString('ja-JP', { maximumFractionDigits: 0 })
-
-const fmtJST = (utc: string) =>
-  new Date(utc).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
+const asNum = (v: any) => (typeof v === 'number' ? v : v == null ? 0 : Number(v))
+const fmtMoney = (v: any) => asNum(v).toLocaleString('ja-JP', { maximumFractionDigits: 0 })
+const fmtJST = (utc: string) => new Date(utc).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
 
 export default function DashboardPage() {
   const supabase = createClient()
   const [rows, setRows] = useState<Row[]>([])
-  const [totals, setTotals] = useState<Totals>({
-    accounts: 0, balance: 0, equity: 0, profit: 0, delta_yday: 0, delta_same_hour_yday: 0
-  })
-  const [lastUpdatedJST, setLastUpdatedJST] = useState<string>('')
+  const [loading, setLoading] = useState(true)
+  const [needLogin, setNeedLogin] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [lastRefreshed, setLastRefreshed] = useState<string>('')
 
-  useEffect(() => {
-    const run = async () => {
+  const load = useCallback(async () => {
+    setLoading(true); setError(null)
+    try {
+      const { data: userData } = await supabase.auth.getUser()
+      const user = userData?.user
+      if (!user) { setNeedLogin(true); setRows([]); return }
+
       const { data, error } = await supabase
         .from('accounts_with_deltas')
         .select('*')
+        .eq('owner_id', user.id)
         .order('balance', { ascending: false })
 
-      if (error) {
-        console.error('[supabase] error:', error)
-        return
-      }
-      const list = (data || []) as Row[]
-      setRows(list)
-
-      const t = list.reduce<Totals>((acc, r) => {
-        acc.accounts += 1
-        acc.balance += r.balance || 0
-        acc.equity += r.equity || 0
-        acc.profit += r.profit_float || 0
-        acc.delta_yday += r.delta_yday || 0
-        acc.delta_same_hour_yday += r.delta_same_hour_yday || 0
-        return acc
-      }, { accounts: 0, balance: 0, equity: 0, profit: 0, delta_yday: 0, delta_same_hour_yday: 0 })
-      setTotals(t)
-
-      setLastUpdatedJST(new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }))
+      if (error) throw error
+      setRows((data || []) as Row[])
+      setLastRefreshed(new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }))
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setLoading(false)
     }
-    run()
-  }, [])
+  }, [supabase])
+
+  useEffect(() => { load() }, [load])
+
+  if (needLogin) {
+    return (
+      <div className="p-6">
+        <h1 className="text-xl font-semibold mb-2">ログインが必要です</h1>
+        <p className="mb-4">このページはログインユーザーのデータのみ表示します。</p>
+        <a className="inline-block px-4 py-2 rounded bg-black text-white" href="/login">ログインへ</a>
+      </div>
+    )
+  }
+
+  const totals = rows.reduce(
+    (acc, r) => {
+      acc.accounts += 1
+      acc.balance += asNum(r.balance)
+      acc.equity += asNum(r.equity)
+      acc.profit += asNum(r.profit_float)
+      acc.delta_yday += asNum(r.delta_yday)
+      acc.delta_same_hour_yday += asNum(r.delta_same_hour_yday)
+      return acc
+    },
+    { accounts: 0, balance: 0, equity: 0, profit: 0, delta_yday: 0, delta_same_hour_yday: 0 }
+  )
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-semibold mb-4">口座ダッシュボード（JST08:00 前日差対応）</h1>
+      {/* ヘッダ + 更新ボタン */}
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl font-semibold">口座ダッシュボード</h1>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-gray-500">最終更新（JST）：{lastRefreshed || '-'}</span>
+          <button
+            onClick={load}
+            disabled={loading}
+            className={`px-4 py-2 rounded text-white ${loading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}
+          >
+            {loading ? '更新中…' : '更新'}
+          </button>
+        </div>
+      </div>
 
-      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5 mb-4">
+      {error && (
+        <div className="mb-3 text-sm text-red-600">エラー: {error} <button className="underline ml-2" onClick={load}>再試行</button></div>
+      )}
+
+      {/* 合計カード */}
+      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5 mb-6">
         <Card title="表示口座数" value={totals.accounts.toLocaleString()} />
         <Card title="合計 残高" value={fmtMoney(totals.balance)} />
         <Card title="合計 有効証拠金" value={fmtMoney(totals.equity)} />
@@ -86,26 +110,25 @@ export default function DashboardPage() {
         <Card title="合計 前日同時刻差" value={fmtMoney(totals.delta_same_hour_yday)} />
       </div>
 
-      <p className="text-sm text-gray-500 mb-3">更新時刻（JST）: {lastUpdatedJST || '-'}</p>
-
+      {/* テーブル */}
       <div className="overflow-x-auto border rounded-lg">
         <table className="min-w-[1000px] w-full text-sm">
           <thead className="bg-gray-100">
             <tr>
-              <th className="px-3 py-2">口座</th>
-              <th className="px-3 py-2">ブローカー</th>
-              <th className="px-3 py-2">タグ</th>
+              <th className="px-3 py-2 text-left">口座</th>
+              <th className="px-3 py-2 text-left">ブローカー</th>
+              <th className="px-3 py-2 text-left">タグ</th>
               <th className="px-3 py-2 text-right">残高</th>
               <th className="px-3 py-2 text-right">有効証拠金</th>
               <th className="px-3 py-2 text-right">含み損益</th>
               <th className="px-3 py-2 text-right">前日差 (JST08:00)</th>
               <th className="px-3 py-2 text-right">前日同時刻差</th>
-              <th className="px-3 py-2">更新時刻（JST）</th>
+              <th className="px-3 py-2 text-left">更新時刻（JST）</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.account_login} className="border-t">
+              <tr key={`${r.owner_id}-${r.account_login}`} className="border-t">
                 <td className="px-3 py-2">{r.account_login}</td>
                 <td className="px-3 py-2">{r.broker}</td>
                 <td className="px-3 py-2">{r.tag}</td>
@@ -132,5 +155,3 @@ function Card({ title, value }: { title: string; value: string }) {
     </div>
   )
 }
-
-// deploy-touch: 2025-08-15T23:59:23+09:00
