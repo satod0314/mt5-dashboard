@@ -22,11 +22,9 @@ type Row = {
 
 const asNum = (v: any) => (typeof v === 'number' ? v : v == null ? 0 : Number(v))
 const fmtMoney = (v: any) => asNum(v).toLocaleString('ja-JP', { maximumFractionDigits: 0 })
-const fmtJST = (utc: string) =>
-  new Date(utc).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
+const fmtJST = (utc: string) => new Date(utc).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
 
 export default function DashboardPage() {
-  // Supabase クライアントは固定（再レンダーで再生成しない）
   const supabase = useMemo(() => createClient(), [])
 
   const [rows, setRows] = useState<Row[]>([])
@@ -35,8 +33,8 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null)
   const [lastRefreshed, setLastRefreshed] = useState<string>('')
   const [userEmail, setUserEmail] = useState<string>('')
+  const [infoMsg, setInfoMsg] = useState<string>('')
 
-  // 二重実行防止 & 初回一度きり & アンマウント検知
   const busyRef = useRef(false)
   const didInit = useRef(false)
   const alive = useRef(true)
@@ -47,6 +45,7 @@ export default function DashboardPage() {
     busyRef.current = true
     setLoading(true)
     setError(null)
+    setInfoMsg('')
 
     try {
       const { data: userData, error: uerr } = await supabase.auth.getUser()
@@ -73,9 +72,7 @@ export default function DashboardPage() {
 
       if (!alive.current) return
       setRows((data || []) as Row[])
-      setLastRefreshed(
-        new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
-      )
+      setLastRefreshed(new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }))
     } catch (e: any) {
       console.error('load error:', e)
       if (!alive.current) return
@@ -86,7 +83,6 @@ export default function DashboardPage() {
     }
   }, [supabase])
 
-  // 初回だけロード（StrictModeの二重実行を抑制）
   useEffect(() => {
     if (!didInit.current) {
       didInit.current = true
@@ -98,12 +94,30 @@ export default function DashboardPage() {
     try {
       await supabase.auth.signOut()
     } finally {
-      // 画面即リセット
       setUserEmail('')
       setRows([])
       setNeedLogin(true)
     }
   }, [supabase])
+
+  // 🔑 パスワード変更メール送信（現在ログイン中のユーザー宛）
+  const onSendReset = useCallback(async () => {
+    if (!userEmail) { setInfoMsg('メールアドレスが取得できません。いったんログアウトして再ログインしてください。'); return }
+    setLoading(true)
+    setError(null)
+    setInfoMsg('')
+    try {
+      const origin = typeof window !== 'undefined' ? window.location.origin : ''
+      const redirectTo = `${origin}/reset-password` // ここに遷移して新PWを設定
+      const { error } = await supabase.auth.resetPasswordForEmail(userEmail, { redirectTo })
+      if (error) throw error
+      setInfoMsg('パスワード変更用のメールを送信しました。受信箱をご確認ください。')
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setLoading(false)
+    }
+  }, [supabase, userEmail])
 
   if (needLogin) {
     return (
@@ -117,7 +131,6 @@ export default function DashboardPage() {
     )
   }
 
-  // 合計計算
   const totals = rows.reduce(
     (acc, r) => {
       acc.accounts += 1
@@ -133,18 +146,12 @@ export default function DashboardPage() {
 
   return (
     <div className="p-6">
-      {/* ヘッダ（更新 & ログアウト） */}
+      {/* ヘッダ（更新 / パスワード変更 / ログアウト） */}
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-semibold">口座ダッシュボード</h1>
         <div className="flex items-center gap-3">
-          {userEmail && (
-            <span className="text-sm text-gray-600 truncate max-w-[40ch]">
-              {userEmail}
-            </span>
-          )}
-          <span className="text-sm text-gray-500">
-            最終更新（JST）：{lastRefreshed || '-'}
-          </span>
+          {userEmail && <span className="text-sm text-gray-600 truncate max-w-[40ch]">{userEmail}</span>}
+          <span className="text-sm text-gray-500">最終更新（JST）：{lastRefreshed || '-'}</span>
           <button
             onClick={load}
             disabled={loading || busyRef.current}
@@ -152,6 +159,13 @@ export default function DashboardPage() {
             aria-busy={loading}
           >
             {loading ? '更新中…' : '更新'}
+          </button>
+          <button
+            onClick={onSendReset}
+            className="px-3 py-2 rounded border text-sm hover:bg-gray-50"
+            title="メールのリンクから新しいパスワードを設定します"
+          >
+            パスワード変更
           </button>
           <button
             onClick={onSignOut}
@@ -163,6 +177,8 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* 情報／エラー */}
+      {infoMsg && <div className="mb-3 text-sm text-green-700">{infoMsg}</div>}
       {error && (
         <div className="mb-3 text-sm text-red-600">
           エラー: {error}{' '}
