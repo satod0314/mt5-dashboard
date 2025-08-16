@@ -240,3 +240,5 @@ function Card({ title, value }: { title: string; value: string }) {
     </div>
   )
 }
+
+// deploy-touch: 2025-08-16T11:56:45+09:00
