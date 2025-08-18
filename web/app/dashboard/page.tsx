@@ -35,6 +35,10 @@ export default function DashboardPage() {
   const [userEmail, setUserEmail] = useState<string>('')
   const [infoMsg, setInfoMsg] = useState<string>('')
 
+  // 折りたたみ状態（デフォルト全閉じ）
+  const [openKeys, setOpenKeys] = useState<Set<string>>(new Set())
+
+  // 二重実行・初回・アンマウント検知
   const busyRef = useRef(false)
   const didInit = useRef(false)
   const alive = useRef(true)
@@ -73,6 +77,13 @@ export default function DashboardPage() {
       if (!alive.current) return
       setRows((data || []) as Row[])
       setLastRefreshed(new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }))
+      // 新しい一覧が来たら、存在しないキーは自動的に閉じられるようにクリーンアップ
+      setOpenKeys(prev => {
+        const next = new Set<string>()
+        const keys = new Set((data || []).map((r: Row) => `${r.owner_id}-${r.account_login}`))
+        for (const k of prev) if (keys.has(k)) next.add(k)
+        return next
+      })
     } catch (e: any) {
       console.error('load error:', e)
       if (!alive.current) return
@@ -100,7 +111,6 @@ export default function DashboardPage() {
     }
   }, [supabase])
 
-  // 🔑 パスワード変更メール送信（現在ログイン中のユーザー宛）
   const onSendReset = useCallback(async () => {
     if (!userEmail) { setInfoMsg('メールアドレスが取得できません。いったんログアウトして再ログインしてください。'); return }
     setLoading(true)
@@ -108,7 +118,7 @@ export default function DashboardPage() {
     setInfoMsg('')
     try {
       const origin = typeof window !== 'undefined' ? window.location.origin : ''
-      const redirectTo = `${origin}/reset-password` // ここに遷移して新PWを設定
+      const redirectTo = `${origin}/reset-password`
       const { error } = await supabase.auth.resetPasswordForEmail(userEmail, { redirectTo })
       if (error) throw error
       setInfoMsg('パスワード変更用のメールを送信しました。受信箱をご確認ください。')
@@ -118,6 +128,15 @@ export default function DashboardPage() {
       setLoading(false)
     }
   }, [supabase, userEmail])
+
+  const toggleRow = (key: string) => {
+    setOpenKeys(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   if (needLogin) {
     return (
@@ -131,6 +150,7 @@ export default function DashboardPage() {
     )
   }
 
+  // 合計
   const totals = rows.reduce(
     (acc, r) => {
       acc.accounts += 1
@@ -186,7 +206,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 合計カード */}
+      {/* 合計カード（常時表示） */}
       <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5 mb-6">
         <Card title="表示口座数" value={totals.accounts.toLocaleString()} />
         <Card title="合計 残高" value={fmtMoney(totals.balance)} />
@@ -195,38 +215,60 @@ export default function DashboardPage() {
         <Card title="合計 前日同時刻差" value={fmtMoney(totals.delta_same_hour_yday)} />
       </div>
 
-      {/* テーブル */}
-      <div className="overflow-x-auto border rounded-lg">
-        <table className="min-w-[1000px] w-full text-sm">
-          <thead className="bg-gray-100">
-            <tr>
-              <th className="px-3 py-2 text-left">口座</th>
-              <th className="px-3 py-2 text-left">ブローカー</th>
-              <th className="px-3 py-2 text-left">タグ</th>
-              <th className="px-3 py-2 text-right">残高</th>
-              <th className="px-3 py-2 text-right">有効証拠金</th>
-              <th className="px-3 py-2 text-right">含み損益</th>
-              <th className="px-3 py-2 text-right">前日差 (JST08:00)</th>
-              <th className="px-3 py-2 text-right">前日同時刻差</th>
-              <th className="px-3 py-2 text-left">更新時刻（JST）</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={`${r.owner_id}-${r.account_login}`} className="border-t">
-                <td className="px-3 py-2">{r.account_login}</td>
-                <td className="px-3 py-2">{r.broker}</td>
-                <td className="px-3 py-2">{r.tag}</td>
-                <td className="px-3 py-2 text-right">{fmtMoney(r.balance)}</td>
-                <td className="px-3 py-2 text-right">{fmtMoney(r.equity)}</td>
-                <td className="px-3 py-2 text-right">{fmtMoney(r.profit_float)}</td>
-                <td className="px-3 py-2 text-right">{fmtMoney(r.delta_yday)}</td>
-                <td className="px-3 py-2 text-right">{fmtMoney(r.delta_same_hour_yday)}</td>
-                <td className="px-3 py-2">{fmtJST(r.ts_utc)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* アコーディオンリスト（各口座：デフォルト閉じ） */}
+      <div className="space-y-2">
+        {rows.map((r) => {
+          const key = `${r.owner_id}-${r.account_login}`
+          const isOpen = openKeys.has(key)
+          return (
+            <div key={key} className="border rounded-lg overflow-hidden bg-white">
+              {/* ヘッダ（タップで開閉） */}
+              <button
+                className="w-full flex items-center justify-between gap-4 px-4 py-3 hover:bg-gray-50"
+                onClick={() => toggleRow(key)}
+                aria-expanded={isOpen}
+              >
+                <div className="text-left">
+                  <div className="font-semibold">
+                    {r.account_login}{' '}
+                    <span className="text-gray-500 font-normal">/ {r.broker}{r.tag ? ` / ${r.tag}` : ''}</span>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    通貨: {r.currency || '-'}
+                  </div>
+                </div>
+                <div className="flex items-baseline gap-6">
+                  <div className="text-right">
+                    <div className="text-xs text-gray-500">残高</div>
+                    <div className="font-bold">{fmtMoney(r.balance)}</div>
+                  </div>
+                  <svg
+                    className={`h-5 w-5 text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                    viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"
+                  >
+                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </button>
+
+              {/* 明細（開いたときだけ表示） */}
+              {isOpen && (
+                <div className="px-4 pb-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                  <Info label="有効証拠金" value={fmtMoney(r.equity)} />
+                  <Info label="含み損益" value={fmtMoney(r.profit_float)} />
+                  <Info label="前日差 (JST08:00)" value={fmtMoney(r.delta_yday)} />
+                  <Info label="前日同時刻差" value={fmtMoney(r.delta_same_hour_yday)} />
+                  <Info label="証拠金" value={fmtMoney(r.margin)} />
+                  <Info label="更新（JST）" value={fmtJST(r.ts_utc)} />
+                </div>
+              )}
+            </div>
+          )
+        })}
+
+        {rows.length === 0 && (
+          <div className="text-sm text-gray-600">データがありません。EAの送信と権限設定をご確認ください。</div>
+        )}
       </div>
     </div>
   )
@@ -241,4 +283,11 @@ function Card({ title, value }: { title: string; value: string }) {
   )
 }
 
-// deploy-touch: 2025-08-16T11:56:45+09:00
+function Info({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-gray-50 rounded-lg p-3 border">
+      <div className="text-xs text-gray-500">{label}</div>
+      <div className="font-semibold">{value}</div>
+    </div>
+  )
+}
