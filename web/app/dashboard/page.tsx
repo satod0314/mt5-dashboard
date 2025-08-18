@@ -35,8 +35,8 @@ export default function DashboardPage() {
   const [userEmail, setUserEmail] = useState<string>('')
   const [infoMsg, setInfoMsg] = useState<string>('')
 
-  // ✅ 全口座まとめて「明細を開く/閉じる」
-  const [allOpen, setAllOpen] = useState<boolean>(false)
+  // 全口座の明細 一括表示/非表示
+  const [allOpen, setAllOpen] = useState(false)
 
   // 実行制御
   const busyRef = useRef(false)
@@ -150,27 +150,29 @@ export default function DashboardPage() {
 
   return (
     <div className="p-6">
-      {/* ヘッダ */}
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      {/* 1行目：タイトルのみ */}
+      <div className="mb-2">
         <h1 className="text-2xl font-semibold">口座ダッシュボード</h1>
+      </div>
+
+      {/* 2行目：左にユーザー/時刻、右にボタン群 */}
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-sm text-gray-700">
+          {userEmail && <span className="mr-2">{userEmail}</span>}
+          <span className="text-gray-500">最終更新（JST）：{lastRefreshed || '-'}</span>
+        </div>
         <div className="flex items-center gap-2 sm:gap-3">
-          {userEmail && <span className="text-sm text-gray-600 truncate max-w-[40ch]">{userEmail}</span>}
-          <span className="text-sm text-gray-500">最終更新（JST）：{lastRefreshed || '-'}</span>
-          {/* 明細の全体開閉（小さなアイコン程度のボタン） */}
+          {/* 口座詳細（全体開閉）→ 他ボタンと同じ形状（ボーダー） */}
           <button
-            onClick={() => setAllOpen((v) => !v)}
-            className="h-9 w-9 flex items-center justify-center rounded border text-gray-700 hover:bg-gray-50"
-            title={allOpen ? '全口座の明細を閉じる' : '全口座の明細を開く'}
+            onClick={() => setAllOpen(v => !v)}
+            className={`px-3 h-9 rounded border text-sm hover:bg-gray-50 ${allOpen ? 'bg-gray-100' : ''}`}
             aria-pressed={allOpen}
+            title="全口座の明細を表示/非表示"
           >
-            {/* 小さな矢印アイコン */}
-            <svg
-              className={`h-4 w-4 transition-transform ${allOpen ? 'rotate-180' : ''}`}
-              viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"
-            >
-              <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
-            </svg>
+            口座詳細
           </button>
+
+          {/* 更新（青塗り） */}
           <button
             onClick={load}
             disabled={loading || busyRef.current}
@@ -179,6 +181,8 @@ export default function DashboardPage() {
           >
             {loading ? '更新中…' : '更新'}
           </button>
+
+          {/* パスワード変更 / ログアウト（ボーダー） */}
           <button
             onClick={onSendReset}
             className="px-3 h-9 rounded border text-sm hover:bg-gray-50"
@@ -214,13 +218,13 @@ export default function DashboardPage() {
         <Card title="合計 前日同時刻差" value={fmtMoney(totals.delta_same_hour_yday)} />
       </div>
 
-      {/* 口座リスト（各口座の蓋は“小さく・固定高”、明細は全体トグル allOpen で表示） */}
+      {/* 口座リスト（各口座ヘッダはコンパクト / 明細は allOpen に従う） */}
       <div className="space-y-2">
         {rows.map((r) => {
           const key = `${r.owner_id}-${r.account_login}`
           return (
             <div key={key} className="border rounded-lg bg-white">
-              {/* コンパクトなヘッダ（小さい行・アイコン程度のサイズ） */}
+              {/* コンパクトヘッダ */}
               <div className="flex items-center justify-between px-3 py-2">
                 <div className="text-left">
                   <div className="text-sm font-medium">
@@ -235,7 +239,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* 明細（全体トグルで一括表示/非表示） */}
+              {/* 明細（全体トグル） */}
               {allOpen && (
                 <div className="px-3 pb-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                   <Info label="有効証拠金" value={fmtMoney(r.equity)} />
@@ -251,9 +255,7 @@ export default function DashboardPage() {
         })}
 
         {rows.length === 0 && (
-          <div className="text-sm text-gray-600">
-            データがありません。EAの送信と権限設定をご確認ください。
-          </div>
+          <div className="text-sm text-gray-600">データがありません。EAの送信と権限設定をご確認ください。</div>
         )}
       </div>
     </div>
