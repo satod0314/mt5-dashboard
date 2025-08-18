@@ -35,7 +35,7 @@ export default function DashboardPage() {
   const [userEmail, setUserEmail] = useState<string>('')
   const [infoMsg, setInfoMsg] = useState<string>('')
 
-  // 全口座の明細 一括表示/非表示
+  // 明細を全口座まとめて開閉
   const [allOpen, setAllOpen] = useState(false)
 
   // 実行制御
@@ -125,7 +125,7 @@ export default function DashboardPage() {
   if (needLogin) {
     return (
       <div className="p-6">
-        <h1 className="text-xl font-semibold mb-2">ログインが必要です</h1>
+        <h1 className="text-2xl font-semibold mb-2">ダッシュボード</h1>
         <p className="mb-4">このページはログインユーザーのデータのみ表示します。</p>
         <a className="inline-block px-4 py-2 rounded bg-black text-white" href="/login">
           ログインへ
@@ -150,19 +150,20 @@ export default function DashboardPage() {
 
   return (
     <div className="p-6">
-      {/* 1行目：タイトルのみ */}
-      <div className="mb-2">
-        <h1 className="text-2xl font-semibold">口座ダッシュボード</h1>
+      {/* 1行目：タイトル */}
+      <h1 className="text-2xl font-semibold">ダッシュボード</h1>
+
+      {/* 2行目：メール（ユーザー名） */}
+      <div className="mt-1 text-sm text-gray-700">
+        {userEmail || '-'}
       </div>
 
-      {/* 2行目：左にユーザー/時刻、右にボタン群 */}
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="text-sm text-gray-700">
-          {userEmail && <span className="mr-2">{userEmail}</span>}
-          <span className="text-gray-500">最終更新（JST）：{lastRefreshed || '-'}</span>
+      {/* 3行目：最終更新（右側にボタン群） */}
+      <div className="mt-1 mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-sm text-gray-500">
+          最終更新（JST）：{lastRefreshed || '-'}
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* 口座詳細（全体開閉）→ 他ボタンと同じ形状（ボーダー） */}
           <button
             onClick={() => setAllOpen(v => !v)}
             className={`px-3 h-9 rounded border text-sm hover:bg-gray-50 ${allOpen ? 'bg-gray-100' : ''}`}
@@ -171,8 +172,6 @@ export default function DashboardPage() {
           >
             口座詳細
           </button>
-
-          {/* 更新（青塗り） */}
           <button
             onClick={load}
             disabled={loading || busyRef.current}
@@ -181,8 +180,6 @@ export default function DashboardPage() {
           >
             {loading ? '更新中…' : '更新'}
           </button>
-
-          {/* パスワード変更 / ログアウト（ボーダー） */}
           <button
             onClick={onSendReset}
             className="px-3 h-9 rounded border text-sm hover:bg-gray-50"
@@ -200,17 +197,9 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 情報／エラー */}
-      {infoMsg && <div className="mb-3 text-sm text-green-700">{infoMsg}</div>}
-      {error && (
-        <div className="mb-3 text-sm text-red-600">
-          エラー: {error}{' '}
-          <button className="underline ml-2" onClick={load}>再試行</button>
-        </div>
-      )}
-
-      {/* 合計カード（常時表示） */}
-      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5 mb-6">
+      {/* 空行（= セクション間の余白） */}
+      {/* 合計カード */}
+      <div className="mb-6 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <Card title="表示口座数" value={totals.accounts.toLocaleString()} />
         <Card title="合計 残高" value={fmtMoney(totals.balance)} />
         <Card title="合計 有効証拠金" value={fmtMoney(totals.equity)} />
@@ -218,7 +207,7 @@ export default function DashboardPage() {
         <Card title="合計 前日同時刻差" value={fmtMoney(totals.delta_same_hour_yday)} />
       </div>
 
-      {/* 口座リスト（各口座ヘッダはコンパクト / 明細は allOpen に従う） */}
+      {/* 口座ごと */}
       <div className="space-y-2">
         {rows.map((r) => {
           const key = `${r.owner_id}-${r.account_login}`
