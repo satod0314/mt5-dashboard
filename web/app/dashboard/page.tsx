@@ -35,10 +35,10 @@ export default function DashboardPage() {
   const [userEmail, setUserEmail] = useState<string>('')
   const [infoMsg, setInfoMsg] = useState<string>('')
 
-  // 折りたたみ状態（デフォルト全閉じ）
-  const [openKeys, setOpenKeys] = useState<Set<string>>(new Set())
+  // ✅ 全口座まとめて「明細を開く/閉じる」
+  const [allOpen, setAllOpen] = useState<boolean>(false)
 
-  // 二重実行・初回・アンマウント検知
+  // 実行制御
   const busyRef = useRef(false)
   const didInit = useRef(false)
   const alive = useRef(true)
@@ -77,13 +77,6 @@ export default function DashboardPage() {
       if (!alive.current) return
       setRows((data || []) as Row[])
       setLastRefreshed(new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }))
-      // 新しい一覧が来たら、存在しないキーは自動的に閉じられるようにクリーンアップ
-      setOpenKeys(prev => {
-        const next = new Set<string>()
-        const keys = new Set((data || []).map((r: Row) => `${r.owner_id}-${r.account_login}`))
-        for (const k of prev) if (keys.has(k)) next.add(k)
-        return next
-      })
     } catch (e: any) {
       console.error('load error:', e)
       if (!alive.current) return
@@ -129,15 +122,6 @@ export default function DashboardPage() {
     }
   }, [supabase, userEmail])
 
-  const toggleRow = (key: string) => {
-    setOpenKeys(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-  }
-
   if (needLogin) {
     return (
       <div className="p-6">
@@ -166,30 +150,45 @@ export default function DashboardPage() {
 
   return (
     <div className="p-6">
-      {/* ヘッダ（更新 / パスワード変更 / ログアウト） */}
+      {/* ヘッダ */}
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-semibold">口座ダッシュボード</h1>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           {userEmail && <span className="text-sm text-gray-600 truncate max-w-[40ch]">{userEmail}</span>}
           <span className="text-sm text-gray-500">最終更新（JST）：{lastRefreshed || '-'}</span>
+          {/* 明細の全体開閉（小さなアイコン程度のボタン） */}
+          <button
+            onClick={() => setAllOpen((v) => !v)}
+            className="h-9 w-9 flex items-center justify-center rounded border text-gray-700 hover:bg-gray-50"
+            title={allOpen ? '全口座の明細を閉じる' : '全口座の明細を開く'}
+            aria-pressed={allOpen}
+          >
+            {/* 小さな矢印アイコン */}
+            <svg
+              className={`h-4 w-4 transition-transform ${allOpen ? 'rotate-180' : ''}`}
+              viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"
+            >
+              <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+            </svg>
+          </button>
           <button
             onClick={load}
             disabled={loading || busyRef.current}
-            className={`px-4 py-2 rounded text-white ${loading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}
+            className={`px-3 sm:px-4 h-9 rounded text-white ${loading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}
             aria-busy={loading}
           >
             {loading ? '更新中…' : '更新'}
           </button>
           <button
             onClick={onSendReset}
-            className="px-3 py-2 rounded border text-sm hover:bg-gray-50"
+            className="px-3 h-9 rounded border text-sm hover:bg-gray-50"
             title="メールのリンクから新しいパスワードを設定します"
           >
             パスワード変更
           </button>
           <button
             onClick={onSignOut}
-            className="px-3 py-2 rounded border text-sm hover:bg-gray-50"
+            className="px-3 h-9 rounded border text-sm hover:bg-gray-50"
             title="サインアウトします"
           >
             ログアウト
@@ -215,45 +214,30 @@ export default function DashboardPage() {
         <Card title="合計 前日同時刻差" value={fmtMoney(totals.delta_same_hour_yday)} />
       </div>
 
-      {/* アコーディオンリスト（各口座：デフォルト閉じ） */}
+      {/* 口座リスト（各口座の蓋は“小さく・固定高”、明細は全体トグル allOpen で表示） */}
       <div className="space-y-2">
         {rows.map((r) => {
           const key = `${r.owner_id}-${r.account_login}`
-          const isOpen = openKeys.has(key)
           return (
-            <div key={key} className="border rounded-lg overflow-hidden bg-white">
-              {/* ヘッダ（タップで開閉） */}
-              <button
-                className="w-full flex items-center justify-between gap-4 px-4 py-3 hover:bg-gray-50"
-                onClick={() => toggleRow(key)}
-                aria-expanded={isOpen}
-              >
+            <div key={key} className="border rounded-lg bg-white">
+              {/* コンパクトなヘッダ（小さい行・アイコン程度のサイズ） */}
+              <div className="flex items-center justify-between px-3 py-2">
                 <div className="text-left">
-                  <div className="font-semibold">
+                  <div className="text-sm font-medium">
                     {r.account_login}{' '}
                     <span className="text-gray-500 font-normal">/ {r.broker}{r.tag ? ` / ${r.tag}` : ''}</span>
                   </div>
-                  <div className="text-xs text-gray-500">
-                    通貨: {r.currency || '-'}
-                  </div>
+                  <div className="text-[11px] text-gray-500">通貨: {r.currency || '-'}</div>
                 </div>
-                <div className="flex items-baseline gap-6">
-                  <div className="text-right">
-                    <div className="text-xs text-gray-500">残高</div>
-                    <div className="font-bold">{fmtMoney(r.balance)}</div>
-                  </div>
-                  <svg
-                    className={`h-5 w-5 text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-                    viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"
-                  >
-                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
-                  </svg>
+                <div className="text-right">
+                  <div className="text-[11px] text-gray-500">残高</div>
+                  <div className="font-bold">{fmtMoney(r.balance)}</div>
                 </div>
-              </button>
+              </div>
 
-              {/* 明細（開いたときだけ表示） */}
-              {isOpen && (
-                <div className="px-4 pb-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              {/* 明細（全体トグルで一括表示/非表示） */}
+              {allOpen && (
+                <div className="px-3 pb-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                   <Info label="有効証拠金" value={fmtMoney(r.equity)} />
                   <Info label="含み損益" value={fmtMoney(r.profit_float)} />
                   <Info label="前日差 (JST08:00)" value={fmtMoney(r.delta_yday)} />
@@ -267,7 +251,9 @@ export default function DashboardPage() {
         })}
 
         {rows.length === 0 && (
-          <div className="text-sm text-gray-600">データがありません。EAの送信と権限設定をご確認ください。</div>
+          <div className="text-sm text-gray-600">
+            データがありません。EAの送信と権限設定をご確認ください。
+          </div>
         )}
       </div>
     </div>
