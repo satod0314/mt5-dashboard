@@ -35,7 +35,7 @@ export default function DashboardPage() {
   const [userEmail, setUserEmail] = useState<string>('')
   const [infoMsg, setInfoMsg] = useState<string>('')
 
-  // 明細を全口座まとめて開閉
+  // 口座明細：全体一括開閉（デフォルト閉じ = 非表示）
   const [allOpen, setAllOpen] = useState(false)
 
   // 実行制御
@@ -158,11 +158,9 @@ export default function DashboardPage() {
         {userEmail || '-'}
       </div>
 
-      {/* 3行目：最終更新（右側にボタン群） */}
+      {/* 3行目：最終更新（右：操作は表示/更新のみ） */}
       <div className="mt-1 mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="text-sm text-gray-500">
-          最終更新（JST）：{lastRefreshed || '-'}
-        </div>
+        <div className="text-sm text-gray-500">最終更新（JST）：{lastRefreshed || '-'}</div>
         <div className="flex items-center gap-2 sm:gap-3">
           <button
             onClick={() => setAllOpen(v => !v)}
@@ -180,20 +178,6 @@ export default function DashboardPage() {
           >
             {loading ? '更新中…' : '更新'}
           </button>
-          <button
-            onClick={onSendReset}
-            className="px-3 h-9 rounded border text-sm hover:bg-gray-50"
-            title="メールのリンクから新しいパスワードを設定します"
-          >
-            パスワード変更
-          </button>
-          <button
-            onClick={onSignOut}
-            className="px-3 h-9 rounded border text-sm hover:bg-gray-50"
-            title="サインアウトします"
-          >
-            ログアウト
-          </button>
         </div>
       </div>
 
@@ -202,51 +186,71 @@ export default function DashboardPage() {
         <Card title="表示口座数" value={totals.accounts.toLocaleString()} />
         <Card title="合計 残高" value={fmtMoney(totals.balance)} />
         <Card title="合計 有効証拠金" value={fmtMoney(totals.equity)} />
-        {/* ↓ 表記を「本日増減 (JST08:00)」に変更 */}
         <Card title="合計 本日増減 (JST08:00)" value={fmtMoney(totals.delta_yday)} />
         <Card title="合計 前日同時刻差" value={fmtMoney(totals.delta_same_hour_yday)} />
       </div>
 
-      {/* 口座ごと */}
+      {/* 口座一覧：デフォルトは非表示。allOpen のときだけ全件表示 */}
       <div className="space-y-2">
-        {rows.map((r) => {
-          const key = `${r.owner_id}-${r.account_login}`
-          return (
-            <div key={key} className="border rounded-lg bg-white">
-              {/* コンパクトヘッダ */}
-              <div className="flex items-center justify-between px-3 py-2">
-                <div className="text-left">
-                  <div className="text-sm font-medium">
-                    {r.account_login}{' '}
-                    <span className="text-gray-500 font-normal">/ {r.broker}{r.tag ? ` / ${r.tag}` : ''}</span>
+        {!allOpen ? (
+          <div className="text-sm text-gray-600">
+            口座一覧は非表示です。「口座詳細」を押すと全口座の明細を表示します（{rows.length} 口座）。
+          </div>
+        ) : (
+          rows.map((r) => {
+            const key = `${r.owner_id}-${r.account_login}`
+            return (
+              <div key={key} className="border rounded-lg bg-white">
+                {/* コンパクトヘッダ */}
+                <div className="flex items-center justify-between px-3 py-2">
+                  <div className="text-left">
+                    <div className="text-sm font-medium">
+                      {r.account_login}{' '}
+                      <span className="text-gray-500 font-normal">/ {r.broker}{r.tag ? ` / ${r.tag}` : ''}</span>
+                    </div>
+                    <div className="text-[11px] text-gray-500">通貨: {r.currency || '-'}</div>
                   </div>
-                  <div className="text-[11px] text-gray-500">通貨: {r.currency || '-'}</div>
+                  <div className="text-right">
+                    <div className="text-[11px] text-gray-500">残高</div>
+                    <div className="font-bold">{fmtMoney(r.balance)}</div>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <div className="text-[11px] text-gray-500">残高</div>
-                  <div className="font-bold">{fmtMoney(r.balance)}</div>
-                </div>
-              </div>
 
-              {/* 明細（全体トグル） */}
-              {allOpen && (
+                {/* 明細 */}
                 <div className="px-3 pb-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                   <Info label="有効証拠金" value={fmtMoney(r.equity)} />
                   <Info label="含み損益" value={fmtMoney(r.profit_float)} />
-                  {/* ↓ ラベル変更 */}
                   <Info label="本日増減 (JST08:00)" value={fmtMoney(r.delta_yday)} />
                   <Info label="前日同時刻差" value={fmtMoney(r.delta_same_hour_yday)} />
                   <Info label="証拠金" value={fmtMoney(r.margin)} />
                   <Info label="更新（JST）" value={fmtJST(r.ts_utc)} />
                 </div>
-              )}
-            </div>
-          )
-        })}
+              </div>
+            )
+          })
+        )}
 
-        {rows.length === 0 && (
+        {allOpen && rows.length === 0 && (
           <div className="text-sm text-gray-600">データがありません。EAの送信と権限設定をご確認ください。</div>
         )}
+      </div>
+
+      {/* 最下部：アカウント操作（常時表示） */}
+      <div className="mt-8 flex flex-col sm:flex-row gap-2 sm:gap-3 sm:justify-end">
+        <button
+          onClick={onSendReset}
+          className="px-3 h-10 rounded border text-sm hover:bg-gray-50"
+          title="メールのリンクから新しいパスワードを設定します"
+        >
+          パスワード変更
+        </button>
+        <button
+          onClick={onSignOut}
+          className="px-3 h-10 rounded border text-sm hover:bg-gray-50"
+          title="サインアウトします"
+        >
+          ログアウト
+        </button>
       </div>
     </div>
   )
