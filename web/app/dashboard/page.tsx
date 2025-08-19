@@ -125,7 +125,7 @@ export default function DashboardPage() {
   if (needLogin) {
     return (
       <div className="p-6">
-        <h1 className="text-base font-normal mb-2">ダッシュボード</h1>
+        <h1 className="!text-base !font-normal mb-2" style={{fontSize:'1rem',fontWeight:400}}>ダッシュボード</h1>
         <p className="mb-4">このページはログインユーザーのデータのみ表示します。</p>
         <a className="inline-block px-4 py-2 rounded bg-black text-white" href="/login">
           ログインへ
@@ -151,7 +151,7 @@ export default function DashboardPage() {
   return (
     <div className="p-6">
       {/* 1行目：タイトル */}
-      <h1 className="text-base font-normal">ダッシュボード</h1>
+      <h1 className="!text-base !font-normal" style={{fontSize:'1rem',fontWeight:400}}>ダッシュボード</h1>
 
       {/* 2行目：メール（ユーザー名） */}
       <div className="mt-1 text-sm text-gray-700">
