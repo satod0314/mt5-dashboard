@@ -197,13 +197,13 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 空行（= セクション間の余白） */}
       {/* 合計カード */}
       <div className="mb-6 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <Card title="表示口座数" value={totals.accounts.toLocaleString()} />
         <Card title="合計 残高" value={fmtMoney(totals.balance)} />
         <Card title="合計 有効証拠金" value={fmtMoney(totals.equity)} />
-        <Card title="合計 前日差 (JST08:00)" value={fmtMoney(totals.delta_yday)} />
+        {/* ↓ 表記を「本日増減 (JST08:00)」に変更 */}
+        <Card title="合計 本日増減 (JST08:00)" value={fmtMoney(totals.delta_yday)} />
         <Card title="合計 前日同時刻差" value={fmtMoney(totals.delta_same_hour_yday)} />
       </div>
 
@@ -233,7 +233,8 @@ export default function DashboardPage() {
                 <div className="px-3 pb-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                   <Info label="有効証拠金" value={fmtMoney(r.equity)} />
                   <Info label="含み損益" value={fmtMoney(r.profit_float)} />
-                  <Info label="前日差 (JST08:00)" value={fmtMoney(r.delta_yday)} />
+                  {/* ↓ ラベル変更 */}
+                  <Info label="本日増減 (JST08:00)" value={fmtMoney(r.delta_yday)} />
                   <Info label="前日同時刻差" value={fmtMoney(r.delta_same_hour_yday)} />
                   <Info label="証拠金" value={fmtMoney(r.margin)} />
                   <Info label="更新（JST）" value={fmtJST(r.ts_utc)} />
