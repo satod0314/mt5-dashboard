@@ -125,6 +125,7 @@ export default function DashboardPage() {
   if (needLogin) {
     return (
       <div className="p-6">
+        {/* 見出しは本文と同じサイズ */}
         <h1 className="!text-base !font-normal mb-2" style={{fontSize:'1rem',fontWeight:400}}>ダッシュボード</h1>
         <p className="mb-4">このページはログインユーザーのデータのみ表示します。</p>
         <a className="inline-block px-4 py-2 rounded bg-black text-white" href="/login">
@@ -150,7 +151,7 @@ export default function DashboardPage() {
 
   return (
     <div className="p-6">
-      {/* 1行目：タイトル */}
+      {/* 1行目：タイトル（本文サイズ） */}
       <h1 className="!text-base !font-normal" style={{fontSize:'1rem',fontWeight:400}}>ダッシュボード</h1>
 
       {/* 2行目：メール（ユーザー名） */}
@@ -190,17 +191,18 @@ export default function DashboardPage() {
         <Card title="合計 前日同時刻差" value={fmtMoney(totals.delta_same_hour_yday)} />
       </div>
 
-      {/* 口座一覧：デフォルトは非表示。allOpen のときだけ全件表示 */}
+      {/* 口座一覧：デフォルトは非表示。allOpen のときだけ全件表示（交互背景） */}
       <div className="space-y-2">
         {!allOpen ? (
           <div className="text-sm text-gray-600">
             口座一覧は非表示です。「口座詳細」を押すと全口座の明細を表示します（{rows.length} 口座）。
           </div>
         ) : (
-          rows.map((r) => {
+          rows.map((r, i) => {
             const key = `${r.owner_id}-${r.account_login}`
+            const rowBg = i % 2 === 0 ? 'bg-gray-50' : 'bg-white' // ← 交互に薄い背景
             return (
-              <div key={key} className="border rounded-lg bg-white">
+              <div key={key} className={`border rounded-lg ${rowBg}`}>
                 {/* コンパクトヘッダ */}
                 <div className="flex items-center justify-between px-3 py-2">
                   <div className="text-left">
