@@ -26,7 +26,6 @@ const fmtJST = (utc: string) => new Date(utc).toLocaleString('ja-JP', { timeZone
 
 export default function DashboardPage() {
   const supabase = useMemo(() => createClient(), [])
-
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(true)
   const [needLogin, setNeedLogin] = useState(false)
@@ -191,47 +190,50 @@ export default function DashboardPage() {
         <Card title="合計 前日同時刻差" value={fmtMoney(totals.delta_same_hour_yday)} />
       </div>
 
-      {/* 口座一覧：デフォルトは非表示。allOpen のときだけ全件表示 */}
+      {/* 口座一覧：デフォルトは非表示。allOpen のときだけ全件表示（インラインstyleで確実にゼブラ） */}
       <div className="space-y-2">
         {!allOpen ? (
           <div className="text-sm text-gray-600">
             口座一覧は非表示です。「口座詳細」を押すと全口座の明細を表示します（{rows.length} 口座）。
           </div>
         ) : (
-          // ▼ ここで direct-children に zebra を適用（odd:薄グレー / even:白）
-          <div className="[&>div:nth-child(odd)]:bg-gray-100 [&>div:nth-child(even)]:bg-white">
-            {rows.map((r) => {
-              const key = `${r.owner_id}-${r.account_login}`
-              return (
-                <div key={key} className="border rounded-lg">
-                  {/* コンパクトヘッダ（背景は親のゼブラを継承） */}
-                  <div className="flex items-center justify-between px-3 py-2">
-                    <div className="text-left">
-                      <div className="text-sm font-medium">
-                        {r.account_login}{' '}
-                        <span className="text-gray-500 font-normal">/ {r.broker}{r.tag ? ` / ${r.tag}` : ''}</span>
-                      </div>
-                      <div className="text-[11px] text-gray-500">通貨: {r.currency || '-'}</div>
+          rows.map((r, i) => {
+            const key = `${r.owner_id}-${r.account_login}`
+            // 薄グレー(#f3f4f6 = gray-100) / 白(#ffffff) を交互に
+            const zebra = i % 2 === 0 ? '#f3f4f6' : '#ffffff'
+            return (
+              <div
+                key={key}
+                className="border rounded-lg"
+                style={{ backgroundColor: zebra }}
+              >
+                {/* コンパクトヘッダ（背景は親をそのまま見せる） */}
+                <div className="flex items-center justify-between px-3 py-2">
+                  <div className="text-left">
+                    <div className="text-sm font-medium">
+                      {r.account_login}{' '}
+                      <span className="text-gray-500 font-normal">/ {r.broker}{r.tag ? ` / ${r.tag}` : ''}</span>
                     </div>
-                    <div className="text-right">
-                      <div className="text-[11px] text-gray-500">残高</div>
-                      <div className="font-bold">{fmtMoney(r.balance)}</div>
-                    </div>
+                    <div className="text-[11px] text-gray-500">通貨: {r.currency || '-'}</div>
                   </div>
-
-                  {/* 明細（背景は親を継承。各Infoは透明背景に変更して重なりを防止） */}
-                  <div className="px-3 pb-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                    <Info label="有効証拠金" value={fmtMoney(r.equity)} />
-                    <Info label="含み損益" value={fmtMoney(r.profit_float)} />
-                    <Info label="本日増減 (JST08:00)" value={fmtMoney(r.delta_yday)} />
-                    <Info label="前日同時刻差" value={fmtMoney(r.delta_same_hour_yday)} />
-                    <Info label="証拠金" value={fmtMoney(r.margin)} />
-                    <Info label="更新（JST）" value={fmtJST(r.ts_utc)} />
+                  <div className="text-right">
+                    <div className="text-[11px] text-gray-500">残高</div>
+                    <div className="font-bold">{fmtMoney(r.balance)}</div>
                   </div>
                 </div>
-              )
-            })}
-          </div>
+
+                {/* 明細（内側は bg-transparent で親のゼブラを殺さない） */}
+                <div className="px-3 pb-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                  <Info label="有効証拠金" value={fmtMoney(r.equity)} />
+                  <Info label="含み損益" value={fmtMoney(r.profit_float)} />
+                  <Info label="本日増減 (JST08:00)" value={fmtMoney(r.delta_yday)} />
+                  <Info label="前日同時刻差" value={fmtMoney(r.delta_same_hour_yday)} />
+                  <Info label="証拠金" value={fmtMoney(r.margin)} />
+                  <Info label="更新（JST）" value={fmtJST(r.ts_utc)} />
+                </div>
+              </div>
+            )
+          })
         )}
 
         {allOpen && rows.length === 0 && (
