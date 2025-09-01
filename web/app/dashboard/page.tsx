@@ -69,7 +69,7 @@ export default function DashboardPage() {
         .from('accounts_with_deltas')
         .select('*')
         .eq('owner_id', user.id)
-        .order('balance', { ascending: false })
+        .order('account_login', { ascending: true })
 
       if (error) throw error
 
