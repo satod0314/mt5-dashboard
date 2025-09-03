@@ -36,12 +36,60 @@ export default function DashboardPage() {
 
   // 口座明細：全体一括開閉（デフォルト閉じ = 非表示）
   const [allOpen, setAllOpen] = useState(false)
+  
+  // 時間ベースの増減表示（デフォルト1時間）
+  const [selectedHours, setSelectedHours] = useState(1)
+  const [timeBasedData, setTimeBasedData] = useState<{
+    [key: string]: { balance: number; equity: number; timestamp: string }
+  }>({})
 
   // 実行制御
   const busyRef = useRef(false)
   const didInit = useRef(false)
   const alive = useRef(true)
   useEffect(() => () => { alive.current = false }, [])
+
+  // 選択された時間前のデータを取得
+  const loadTimeBasedData = useCallback(async (userId: string, hours: number) => {
+    try {
+      const targetTime = new Date()
+      targetTime.setHours(targetTime.getHours() - hours)
+      
+      // 各口座の指定時間前のデータを取得
+      const accountLogins = rows.map(r => r.account_login)
+      if (accountLogins.length === 0) return
+      
+      const { data: historicalData, error } = await supabase
+        .from('snapshots_hi')
+        .select('account_login, balance, equity, ts_utc')
+        .eq('owner_id', userId)
+        .in('account_login', accountLogins)
+        .gte('ts_utc', targetTime.toISOString())
+        .order('ts_utc', { ascending: true })
+      
+      if (error) {
+        console.error('Historical data fetch error:', error)
+        return
+      }
+      
+      // 各口座の最も古いデータポイントを取得
+      const oldestData: { [key: string]: any } = {}
+      historicalData?.forEach(snapshot => {
+        const login = snapshot.account_login.toString()
+        if (!oldestData[login] || new Date(snapshot.ts_utc) < new Date(oldestData[login].timestamp)) {
+          oldestData[login] = {
+            balance: snapshot.balance || 0,
+            equity: snapshot.equity || 0,
+            timestamp: snapshot.ts_utc
+          }
+        }
+      })
+      
+      setTimeBasedData(oldestData)
+    } catch (e) {
+      console.error('Time-based data error:', e)
+    }
+  }, [supabase, rows])
 
   const load = useCallback(async () => {
     if (busyRef.current) return
@@ -76,6 +124,9 @@ export default function DashboardPage() {
       if (!alive.current) return
       setRows((data || []) as Row[])
       setLastRefreshed(new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }))
+      
+      // 選択された時間前のデータを取得
+      await loadTimeBasedData(user.id, selectedHours)
     } catch (e: any) {
       console.error('load error:', e)
       if (!alive.current) return
@@ -84,7 +135,7 @@ export default function DashboardPage() {
       if (alive.current) setLoading(false)
       busyRef.current = false
     }
-  }, [supabase])
+  }, [supabase, selectedHours])
 
   useEffect(() => {
     if (!didInit.current) {
@@ -92,6 +143,17 @@ export default function DashboardPage() {
       setTimeout(() => { load() }, 0)
     }
   }, [load])
+  
+  // 時間選択が変更されたときにデータを再取得
+  useEffect(() => {
+    const loadData = async () => {
+      const { data: userData } = await supabase.auth.getUser()
+      if (userData?.user && rows.length > 0) {
+        await loadTimeBasedData(userData.user.id, selectedHours)
+      }
+    }
+    loadData()
+  }, [selectedHours, rows, supabase, loadTimeBasedData])
 
   const onSignOut = useCallback(async () => {
     try {
@@ -143,9 +205,16 @@ export default function DashboardPage() {
       acc.profit += asNum(r.profit_float)
       acc.delta_yday += asNum(r.delta_yday)
       acc.delta_same_hour_yday += asNum(r.delta_same_hour_yday)
+      
+      // 時間ベースの増減を計算
+      const login = r.account_login.toString()
+      if (timeBasedData[login]) {
+        acc.delta_time_based += asNum(r.balance) - asNum(timeBasedData[login].balance)
+      }
+      
       return acc
     },
-    { accounts: 0, balance: 0, equity: 0, profit: 0, delta_yday: 0, delta_same_hour_yday: 0 }
+    { accounts: 0, balance: 0, equity: 0, profit: 0, delta_yday: 0, delta_same_hour_yday: 0, delta_time_based: 0 }
   )
 
   return (
@@ -162,6 +231,17 @@ export default function DashboardPage() {
       <div className="mt-1 mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-sm text-gray-500">最終更新（JST）：{lastRefreshed || '-'}</div>
         <div className="flex items-center gap-2 sm:gap-3">
+          <select
+            value={selectedHours}
+            onChange={(e) => setSelectedHours(Number(e.target.value))}
+            className="px-3 h-9 rounded border text-sm bg-white hover:bg-gray-50"
+            title="増減計算の基準時間を選択"
+          >
+            <option value={1}>1時間前</option>
+            <option value={3}>3時間前</option>
+            <option value={6}>6時間前</option>
+            <option value={12}>12時間前</option>
+          </select>
           <button
             onClick={() => setAllOpen(v => !v)}
             className={`px-3 h-9 rounded border text-sm hover:bg-gray-50 ${allOpen ? 'bg-gray-100' : ''}`}
@@ -182,10 +262,11 @@ export default function DashboardPage() {
       </div>
 
       {/* 合計カード */}
-      <div className="mb-6 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Card title="表示口座数" value={totals.accounts.toLocaleString()} />
         <Card title="合計 残高" value={fmtMoney(totals.balance)} />
         <Card title="合計 有効証拠金" value={fmtMoney(totals.equity)} />
+        <Card title={`合計 ${selectedHours}時間前からの増減`} value={fmtMoney(totals.delta_time_based)} />
         <Card title="合計 本日増減 (JST08:00)" value={fmtMoney(totals.delta_yday)} />
         <Card title="合計 前日同時刻差" value={fmtMoney(totals.delta_same_hour_yday)} />
       </div>
@@ -223,9 +304,17 @@ export default function DashboardPage() {
                 </div>
 
                 {/* 明細（内側は bg-transparent で親のゼブラを殺さない） */}
-                <div className="px-3 pb-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <div className="px-3 pb-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
                   <Info label="有効証拠金" value={fmtMoney(r.equity)} />
                   <Info label="含み損益" value={fmtMoney(r.profit_float)} />
+                  <Info 
+                    label={`${selectedHours}時間前から`} 
+                    value={fmtMoney(
+                      timeBasedData[r.account_login.toString()] 
+                        ? asNum(r.balance) - asNum(timeBasedData[r.account_login.toString()].balance)
+                        : 0
+                    )} 
+                  />
                   <Info label="本日増減 (JST08:00)" value={fmtMoney(r.delta_yday)} />
                   <Info label="前日同時刻差" value={fmtMoney(r.delta_same_hour_yday)} />
                   <Info label="証拠金" value={fmtMoney(r.margin)} />
